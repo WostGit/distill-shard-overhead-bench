@@ -1,0 +1,10 @@
+{"id": "p1", "prompt": "Summarize why reproducible benchmarking matters in one sentence."}
+{"id": "p2", "prompt": "Write one sentence defining pipeline sharding overhead."}
+{"id": "p3", "prompt": "Give one short tip for timing model load on CI runners."}
+{"id": "p4", "prompt": "Explain in one sentence why stragglers reduce parallel efficiency."}
+{"id": "p5", "prompt": "Provide one sentence about CPU-only constraints in model benchmarking."}
+{"id": "p6", "prompt": "Write one sentence on why tiny datasets help CI benchmark iteration."}
+{"id": "p7", "prompt": "Give one sentence about artifact transfer overhead in distributed jobs."}
+{"id": "p8", "prompt": "Provide one sentence on why fixed runner labels improve comparability."}
+{"id": "p9", "prompt": "Write one sentence describing communication overhead fraction."}
+{"id": "p10", "prompt": "Give one sentence explaining why speedup can be less than shard count."}
