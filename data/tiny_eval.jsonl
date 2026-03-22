@@ -1,0 +1,5 @@
+{"id": "e1", "text": "Benchmark speedup is useful only when overhead is measured transparently."}
+{"id": "e2", "text": "Parallel efficiency falls when runners wait on slow shards."}
+{"id": "e3", "text": "A reproducible baseline is required before claiming distributed gains."}
+{"id": "e4", "text": "Artifact transfer time can dominate tiny compute workloads."}
+{"id": "e5", "text": "Small models are practical for CPU-only CI benchmarking."}

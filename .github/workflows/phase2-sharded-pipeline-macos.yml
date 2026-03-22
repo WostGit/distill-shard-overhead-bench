@@ -1,0 +1,175 @@
+name: phase2-sharded-pipeline-macos
+
+on:
+  workflow_dispatch:
+
+jobs:
+  single-baseline:
+    runs-on: macos-14
+    timeout-minutes: 120
+    env:
+      PYTHONUNBUFFERED: "1"
+      TEACHER_MODEL_ID: Qwen/Qwen2.5-0.5B-Instruct
+      STUDENT_MODEL_ID: Qwen/Qwen2.5-0.5B-Instruct
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - run: |
+          python scripts/run_single_baseline.py \
+            --output-dir outputs/phase2_single \
+            --metrics-output outputs/metrics/single_baseline_metrics.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: single-baseline-metrics
+          path: outputs/metrics/single_baseline_metrics.json
+
+  teacher-shards:
+    runs-on: macos-14
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard_id: [0, 1, 2, 3, 4]
+    env:
+      PYTHONUNBUFFERED: "1"
+      TEACHER_MODEL_ID: Qwen/Qwen2.5-0.5B-Instruct
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - run: |
+          mkdir -p outputs/phase2_teacher outputs/metrics
+          python scripts/run_teacher_shard.py \
+            --input data/tiny_teacher_prompts.jsonl \
+            --shard-id ${{ matrix.shard_id }} \
+            --num-shards 5 \
+            --output outputs/phase2_teacher/teacher_shard_${{ matrix.shard_id }}.jsonl \
+            --metrics-output outputs/metrics/teacher_shard_${{ matrix.shard_id }}_metrics.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: teacher-shard-${{ matrix.shard_id }}
+          path: |
+            outputs/phase2_teacher/teacher_shard_${{ matrix.shard_id }}.jsonl
+            outputs/metrics/teacher_shard_${{ matrix.shard_id }}_metrics.json
+
+  merge-and-train:
+    runs-on: macos-14
+    timeout-minutes: 120
+    needs: [teacher-shards]
+    env:
+      PYTHONUNBUFFERED: "1"
+      STUDENT_MODEL_ID: Qwen/Qwen2.5-0.5B-Instruct
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          path: downloaded
+      - run: |
+          mkdir -p outputs/phase2_merge outputs/metrics
+          python scripts/merge_teacher_outputs.py \
+            --inputs \
+              downloaded/teacher-shard-0/outputs/phase2_teacher/teacher_shard_0.jsonl \
+              downloaded/teacher-shard-1/outputs/phase2_teacher/teacher_shard_1.jsonl \
+              downloaded/teacher-shard-2/outputs/phase2_teacher/teacher_shard_2.jsonl \
+              downloaded/teacher-shard-3/outputs/phase2_teacher/teacher_shard_3.jsonl \
+              downloaded/teacher-shard-4/outputs/phase2_teacher/teacher_shard_4.jsonl \
+            --output outputs/phase2_merge/merged_teacher_outputs.jsonl \
+            --metrics-output outputs/metrics/merge_metrics.json
+          python scripts/run_student_train.py \
+            --teacher-input outputs/phase2_merge/merged_teacher_outputs.jsonl \
+            --metrics-output outputs/metrics/train_metrics.json \
+            --max-steps 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: merge-and-train
+          path: |
+            outputs/phase2_merge/merged_teacher_outputs.jsonl
+            outputs/metrics/merge_metrics.json
+            outputs/metrics/train_metrics.json
+
+  eval-shards:
+    runs-on: macos-14
+    timeout-minutes: 120
+    needs: [merge-and-train]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard_id: [0, 1, 2, 3, 4]
+    env:
+      PYTHONUNBUFFERED: "1"
+      STUDENT_MODEL_ID: Qwen/Qwen2.5-0.5B-Instruct
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - run: |
+          mkdir -p outputs/metrics
+          python scripts/run_eval_shard.py \
+            --input data/tiny_eval.jsonl \
+            --shard-id ${{ matrix.shard_id }} \
+            --num-shards 5 \
+            --metrics-output outputs/metrics/eval_shard_${{ matrix.shard_id }}_metrics.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eval-shard-${{ matrix.shard_id }}
+          path: outputs/metrics/eval_shard_${{ matrix.shard_id }}_metrics.json
+
+  aggregate:
+    runs-on: macos-14
+    timeout-minutes: 120
+    needs: [single-baseline, teacher-shards, merge-and-train, eval-shards]
+    env:
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          path: downloaded
+      - run: |
+          mkdir -p outputs/metrics
+          python scripts/aggregate_metrics.py \
+            --single-metrics downloaded/single-baseline-metrics/outputs/metrics/single_baseline_metrics.json \
+            --teacher-metrics \
+              downloaded/teacher-shard-0/outputs/metrics/teacher_shard_0_metrics.json \
+              downloaded/teacher-shard-1/outputs/metrics/teacher_shard_1_metrics.json \
+              downloaded/teacher-shard-2/outputs/metrics/teacher_shard_2_metrics.json \
+              downloaded/teacher-shard-3/outputs/metrics/teacher_shard_3_metrics.json \
+              downloaded/teacher-shard-4/outputs/metrics/teacher_shard_4_metrics.json \
+            --merge-metrics downloaded/merge-and-train/outputs/metrics/merge_metrics.json \
+            --train-metrics downloaded/merge-and-train/outputs/metrics/train_metrics.json \
+            --eval-metrics \
+              downloaded/eval-shard-0/outputs/metrics/eval_shard_0_metrics.json \
+              downloaded/eval-shard-1/outputs/metrics/eval_shard_1_metrics.json \
+              downloaded/eval-shard-2/outputs/metrics/eval_shard_2_metrics.json \
+              downloaded/eval-shard-3/outputs/metrics/eval_shard_3_metrics.json \
+              downloaded/eval-shard-4/outputs/metrics/eval_shard_4_metrics.json \
+            --output outputs/metrics/phase2_aggregate_metrics.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase2-aggregate-metrics
+          path: outputs/metrics/phase2_aggregate_metrics.json
