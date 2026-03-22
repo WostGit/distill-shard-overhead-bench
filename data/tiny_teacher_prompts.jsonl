@@ -1,0 +1,10 @@
+{"id": "p1", "prompt": "Explain what a hash map is in one short paragraph."}
+{"id": "p2", "prompt": "Write two bullet points about why unit tests are useful."}
+{"id": "p3", "prompt": "Give a concise definition of model distillation."}
+{"id": "p4", "prompt": "List three tips for reproducible machine learning experiments."}
+{"id": "p5", "prompt": "Explain the difference between latency and throughput."}
+{"id": "p6", "prompt": "Provide a short analogy for parallel processing."}
+{"id": "p7", "prompt": "Give a one-paragraph explanation of overfitting."}
+{"id": "p8", "prompt": "Write two sentences on why benchmarking overhead matters."}
+{"id": "p9", "prompt": "Define wall-clock time in plain language."}
+{"id": "p10", "prompt": "Describe one downside of too many pipeline stages."}

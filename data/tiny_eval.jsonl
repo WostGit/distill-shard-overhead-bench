@@ -1,0 +1,5 @@
+{"id": "e1", "prompt": "What is parallel efficiency?", "reference": "Parallel efficiency compares achieved speedup to ideal speedup."}
+{"id": "e2", "prompt": "What is communication overhead?", "reference": "Communication overhead is time spent on coordination and transfers instead of computation."}
+{"id": "e3", "prompt": "Why is a baseline needed?", "reference": "A baseline lets you compare sharded results to a single-runner run."}
+{"id": "e4", "prompt": "What causes stragglers?", "reference": "Stragglers happen when one shard runs slower than others and delays completion."}
+{"id": "e5", "prompt": "What does speedup measure?", "reference": "Speedup measures how much faster the sharded pipeline is than the baseline."}
