@@ -1,0 +1,196 @@
+name: phase2-sharded-pipeline-macos
+
+on:
+  workflow_dispatch:
+
+jobs:
+  single-baseline-reference:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - run: |
+          python scripts/run_single_baseline.py \
+            --teacher-prompts data/tiny_teacher_prompts.jsonl \
+            --eval-path data/tiny_eval.jsonl \
+            --output-dir outputs/phase2_single_ref \
+            --metrics-path outputs/metrics/phase2_single_reference_metrics.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: single-baseline-reference
+          path: outputs/metrics/phase2_single_reference_metrics.json
+
+  teacher-shards:
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        shard_index: [0, 1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run teacher shard
+        run: |
+          python scripts/run_teacher_shard.py \
+            --prompts-path data/tiny_teacher_prompts.jsonl \
+            --shard-index ${{ matrix.shard_index }} \
+            --shard-count 5 \
+            --output-path outputs/phase2/teacher_shard_${{ matrix.shard_index }}.jsonl \
+            --metrics-path outputs/metrics/teacher_shard_${{ matrix.shard_index }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: teacher-shard-${{ matrix.shard_index }}
+          path: |
+            outputs/phase2/teacher_shard_${{ matrix.shard_index }}.jsonl
+            outputs/metrics/teacher_shard_${{ matrix.shard_index }}.json
+
+  merge-teacher:
+    runs-on: macos-14
+    needs: teacher-shards
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          path: outputs/downloaded
+      - name: Merge teacher outputs
+        run: |
+          python scripts/merge_teacher_outputs.py \
+            --input-glob 'outputs/downloaded/teacher-shard-*/teacher_shard_*.jsonl' \
+            --output-path outputs/phase2/teacher_merged.jsonl \
+            --metrics-path outputs/metrics/merge_teacher_metrics.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: teacher-merged
+          path: |
+            outputs/phase2/teacher_merged.jsonl
+            outputs/metrics/merge_teacher_metrics.json
+
+  student-train:
+    runs-on: macos-14
+    needs: merge-teacher
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: teacher-merged
+          path: outputs/downloaded/teacher-merged
+      - run: |
+          python scripts/run_student_train.py \
+            --teacher-outputs-path outputs/downloaded/teacher-merged/teacher_merged.jsonl \
+            --output-model-path outputs/phase2/student_model.json \
+            --metrics-path outputs/metrics/student_train_phase2.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: student-model
+          path: |
+            outputs/phase2/student_model.json
+            outputs/metrics/student_train_phase2.json
+
+  eval-shards:
+    runs-on: macos-14
+    needs: student-train
+    strategy:
+      fail-fast: false
+      matrix:
+        shard_index: [0, 1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: student-model
+          path: outputs/downloaded/student-model
+      - run: |
+          python scripts/run_eval_shard.py \
+            --eval-path data/tiny_eval.jsonl \
+            --student-model-path outputs/downloaded/student-model/student_model.json \
+            --shard-index ${{ matrix.shard_index }} \
+            --shard-count 5 \
+            --output-path outputs/phase2/eval_shard_${{ matrix.shard_index }}.jsonl \
+            --metrics-path outputs/metrics/eval_shard_${{ matrix.shard_index }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eval-shard-${{ matrix.shard_index }}
+          path: |
+            outputs/phase2/eval_shard_${{ matrix.shard_index }}.jsonl
+            outputs/metrics/eval_shard_${{ matrix.shard_index }}.json
+
+  aggregate:
+    runs-on: macos-14
+    needs:
+      - single-baseline-reference
+      - teacher-shards
+      - merge-teacher
+      - student-train
+      - eval-shards
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          path: outputs/downloaded
+      - name: Measure transfer bytes/time
+        run: |
+          python - <<'PY'
+          import os
+          import time
+          start = time.perf_counter()
+          total = 0
+          for root, _, files in os.walk('outputs/downloaded'):
+              for f in files:
+                  total += os.path.getsize(os.path.join(root, f))
+          elapsed = time.perf_counter() - start
+          os.makedirs('outputs/metrics', exist_ok=True)
+          with open('outputs/metrics/transfer_env.txt', 'w', encoding='utf-8') as h:
+              h.write(f"ARTIFACT_TRANSFER_BYTES={total}\n")
+              h.write(f"ARTIFACT_TRANSFER_TIME_SEC={elapsed}\n")
+          PY
+      - name: Aggregate phase2 metrics
+        run: |
+          source outputs/metrics/transfer_env.txt
+          python scripts/aggregate_metrics.py \
+            --single-baseline-metrics outputs/downloaded/single-baseline-reference/phase2_single_reference_metrics.json \
+            --teacher-metrics-glob 'outputs/downloaded/teacher-shard-*/teacher_shard_*.json' \
+            --merge-metrics outputs/downloaded/teacher-merged/merge_teacher_metrics.json \
+            --train-metrics outputs/downloaded/student-model/student_train_phase2.json \
+            --eval-metrics-glob 'outputs/downloaded/eval-shard-*/eval_shard_*.json' \
+            --teacher-outputs-glob 'outputs/downloaded/teacher-shard-*/teacher_shard_*.jsonl' \
+            --eval-outputs-glob 'outputs/downloaded/eval-shard-*/eval_shard_*.jsonl' \
+            --artifact-transfer-time-sec "$ARTIFACT_TRANSFER_TIME_SEC" \
+            --output-path outputs/metrics/phase2_aggregate_report.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase2-aggregate-report
+          path: outputs/metrics/phase2_aggregate_report.json

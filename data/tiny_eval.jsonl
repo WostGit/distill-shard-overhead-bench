@@ -1,0 +1,5 @@
+{"id": "e1", "prompt": "Define parallel efficiency in one sentence.", "target_keywords": ["parallel", "efficiency", "speedup"]}
+{"id": "e2", "prompt": "Name one cost of splitting work across runners.", "target_keywords": ["overhead", "transfer", "merge"]}
+{"id": "e3", "prompt": "Why do stragglers reduce observed speedup?", "target_keywords": ["waiting", "straggler", "idle"]}
+{"id": "e4", "prompt": "What should benchmark JSON include for transparency?", "target_keywords": ["timing", "model", "artifact"]}
+{"id": "e5", "prompt": "Why keep workflows auditable?", "target_keywords": ["simple", "reproducible", "clear"]}
