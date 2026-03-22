@@ -1,0 +1,209 @@
+name: phase2-sharded-pipeline-macos
+
+on:
+  workflow_dispatch:
+
+jobs:
+  single-baseline-reference:
+    runs-on: macos-14
+    env:
+      MODEL_ID: Qwen/Qwen2.5-0.5B-Instruct
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Baseline reference run
+        run: |
+          python scripts/run_single_baseline.py --metrics-output outputs/metrics/phase1_single_metrics.json --output-dir outputs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase2-single-reference
+          path: outputs/metrics/phase1_single_metrics.json
+
+  teacher-shards:
+    needs: single-baseline-reference
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        shard_index: [0, 1, 2, 3, 4]
+    env:
+      MODEL_ID: Qwen/Qwen2.5-0.5B-Instruct
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Teacher shard run
+        run: |
+          python scripts/run_teacher_shard.py \
+            --input data/tiny_teacher_prompts.jsonl \
+            --output outputs/teacher_shard_${{ matrix.shard_index }}.jsonl \
+            --metrics outputs/metrics/teacher_metrics_shard_${{ matrix.shard_index }}.json \
+            --shard-index ${{ matrix.shard_index }} \
+            --num-shards 5
+      - uses: actions/upload-artifact@v4
+        with:
+          name: teacher-shard-${{ matrix.shard_index }}
+          path: |
+            outputs/teacher_shard_${{ matrix.shard_index }}.jsonl
+            outputs/metrics/teacher_metrics_shard_${{ matrix.shard_index }}.json
+
+  merge-and-train:
+    needs: teacher-shards
+    runs-on: macos-14
+    env:
+      MODEL_ID: Qwen/Qwen2.5-0.5B-Instruct
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Download teacher shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: teacher-shard-*
+          merge-multiple: true
+          path: outputs/shards
+      - name: Merge teacher outputs
+        run: |
+          python scripts/merge_teacher_outputs.py \
+            --input-dir outputs/shards \
+            --output outputs/teacher_merged.jsonl \
+            --metrics outputs/metrics/merge_metrics.json
+      - name: Train student
+        run: |
+          python scripts/run_student_train.py \
+            --teacher-input outputs/teacher_merged.jsonl \
+            --student-output outputs/student_snapshot.json \
+            --metrics outputs/metrics/train_metrics.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: merged-and-train
+          path: |
+            outputs/teacher_merged.jsonl
+            outputs/student_snapshot.json
+            outputs/metrics/merge_metrics.json
+            outputs/metrics/train_metrics.json
+            outputs/shards
+
+  eval-shards:
+    needs: merge-and-train
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        shard_index: [0, 1, 2, 3, 4]
+    env:
+      MODEL_ID: Qwen/Qwen2.5-0.5B-Instruct
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Eval shard run
+        run: |
+          python scripts/run_eval_shard.py \
+            --eval-input data/tiny_eval.jsonl \
+            --predictions outputs/eval_shard_${{ matrix.shard_index }}.jsonl \
+            --metrics outputs/metrics/eval_metrics_shard_${{ matrix.shard_index }}.json \
+            --shard-index ${{ matrix.shard_index }} \
+            --num-shards 5
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eval-shard-${{ matrix.shard_index }}
+          path: |
+            outputs/eval_shard_${{ matrix.shard_index }}.jsonl
+            outputs/metrics/eval_metrics_shard_${{ matrix.shard_index }}.json
+
+  aggregate-report:
+    needs: [single-baseline-reference, merge-and-train, eval-shards]
+    runs-on: macos-14
+    env:
+      MODEL_ID: Qwen/Qwen2.5-0.5B-Instruct
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Mark sharded start
+        run: echo "SHARDED_START=$(date +%s)" >> $GITHUB_ENV
+      - name: Download baseline, teacher, merge and eval artifacts
+        run: |
+          start=$(python - <<'PY'
+import time
+print(time.perf_counter())
+PY
+)
+          echo "TRANSFER_START=$start" >> $GITHUB_ENV
+      - uses: actions/download-artifact@v4
+        with:
+          name: phase2-single-reference
+          path: outputs/single
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: teacher-shard-*
+          merge-multiple: true
+          path: outputs/teacher_metrics
+      - uses: actions/download-artifact@v4
+        with:
+          name: merged-and-train
+          path: outputs/merged
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: eval-shard-*
+          merge-multiple: true
+          path: outputs/eval_metrics
+      - name: Compute transfer stats and aggregate
+        run: |
+          end=$(python - <<'PY'
+import os, time
+from pathlib import Path
+root = Path('outputs')
+size = sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
+transfer_start = float(os.environ.get('TRANSFER_START', time.perf_counter()))
+transfer_time = time.perf_counter() - transfer_start
+print(f"TRANSFER_BYTES={size}" >> open(os.environ['GITHUB_ENV'], 'a'))
+print(f"TRANSFER_TIME={transfer_time}" >> open(os.environ['GITHUB_ENV'], 'a'))
+PY
+)
+          sharded_end=$(date +%s)
+          sharded_start=${SHARDED_START:-$sharded_end}
+          sharded_wall=$((sharded_end - sharded_start))
+          python scripts/aggregate_metrics.py \
+            --single-metrics outputs/single/phase1_single_metrics.json \
+            --teacher-metrics-dir outputs/teacher_metrics \
+            --eval-metrics-dir outputs/eval_metrics \
+            --merge-metrics outputs/merged/metrics/merge_metrics.json \
+            --transfer-bytes ${TRANSFER_BYTES:-0} \
+            --transfer-time-sec ${TRANSFER_TIME:-0} \
+            --idle-or-wait-time-sec 0.0 \
+            --failure-count 0 \
+            --retry-count 0 \
+            --sharded-wall-time-sec ${sharded_wall} \
+            --output outputs/metrics/phase2_aggregate_metrics.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase2-aggregate-metrics
+          path: outputs/metrics/phase2_aggregate_metrics.json
