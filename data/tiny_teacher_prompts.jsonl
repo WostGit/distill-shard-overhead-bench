@@ -1,0 +1,10 @@
+{"id": "p1", "prompt": "Summarize why clear benchmark instrumentation matters."}
+{"id": "p2", "prompt": "List two risks of over-claiming parallel speedup from small runners."}
+{"id": "p3", "prompt": "Write a short note about straggler effects in distributed jobs."}
+{"id": "p4", "prompt": "Explain why reproducible workflows need fixed runner labels."}
+{"id": "p5", "prompt": "Give one sentence defining communication overhead in sharded pipelines."}
+{"id": "p6", "prompt": "State one reason tiny datasets help CI benchmark reliability."}
+{"id": "p7", "prompt": "Provide a concise caution about comparing CPU and GPU throughput."}
+{"id": "p8", "prompt": "What is a practical way to report bottlenecks in pipeline timings?"}
+{"id": "p9", "prompt": "How can artifact size affect distributed benchmark performance?"}
+{"id": "p10", "prompt": "Why should model-id changes be explicit in benchmark outputs?"}
