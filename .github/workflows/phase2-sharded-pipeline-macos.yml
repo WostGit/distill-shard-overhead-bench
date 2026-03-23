@@ -8,18 +8,24 @@ jobs:
     runs-on: macos-14
     env:
       MODEL_ID: Qwen/Qwen2.5-0.5B-Instruct
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
       - name: Run single baseline reference
         run: |
-          python scripts/run_single_baseline.py --metrics outputs/metrics/phase1_single_baseline_metrics.json
+          python scripts/run_single_baseline.py \
+            --metrics outputs/metrics/phase1_single_baseline_metrics.json
+
       - uses: actions/upload-artifact@v4
         with:
           name: baseline-reference
@@ -34,15 +40,19 @@ jobs:
         shard_index: [0, 1, 2, 3, 4]
     env:
       MODEL_ID: Qwen/Qwen2.5-0.5B-Instruct
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
       - name: Run teacher shard
         run: |
           mkdir -p outputs/teacher_shards outputs/metrics
@@ -51,6 +61,7 @@ jobs:
             --shard-count 5 \
             --output outputs/teacher_shards/teacher_shard_${{ matrix.shard_index }}.jsonl \
             --metrics outputs/metrics/teacher_metrics_${{ matrix.shard_index }}.json
+
       - uses: actions/upload-artifact@v4
         with:
           name: teacher-shard-${{ matrix.shard_index }}
@@ -61,14 +72,17 @@ jobs:
   merge-teacher:
     needs: [teacher-shards]
     runs-on: macos-14
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Download teacher shards
         uses: actions/download-artifact@v4
         with:
           path: downloaded_teacher
           pattern: teacher-shard-*
           merge-multiple: true
+
       - name: Merge teacher outputs
         run: |
           mkdir -p outputs/merged outputs/metrics
@@ -76,6 +90,7 @@ jobs:
             --input-dir downloaded_teacher/outputs/teacher_shards \
             --output outputs/merged/teacher_merged.jsonl \
             --metrics outputs/metrics/merge_metrics.json
+
       - uses: actions/upload-artifact@v4
         with:
           name: merged-teacher
@@ -89,13 +104,16 @@ jobs:
     runs-on: macos-14
     env:
       MODEL_ID: Qwen/Qwen2.5-0.5B-Instruct
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Download merged teacher
         uses: actions/download-artifact@v4
         with:
           name: merged-teacher
           path: downloaded_merge
+
       - name: Run student train
         run: |
           mkdir -p outputs/student outputs/metrics
@@ -103,6 +121,7 @@ jobs:
             --teacher-input downloaded_merge/outputs/merged/teacher_merged.jsonl \
             --student-output outputs/student/student_artifact.json \
             --metrics outputs/metrics/train_metrics.json
+
       - uses: actions/upload-artifact@v4
         with:
           name: student-artifact
@@ -121,15 +140,19 @@ jobs:
         shard_index: [0, 1, 2, 3, 4]
     env:
       MODEL_ID: Qwen/Qwen2.5-0.5B-Instruct
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
       - name: Run eval shard
         run: |
           mkdir -p outputs/eval_shards outputs/metrics
@@ -138,6 +161,7 @@ jobs:
             --shard-count 5 \
             --output outputs/eval_shards/eval_shard_${{ matrix.shard_index }}.jsonl \
             --metrics outputs/metrics/eval_metrics_${{ matrix.shard_index }}.json
+
       - uses: actions/upload-artifact@v4
         with:
           name: eval-shard-${{ matrix.shard_index }}
@@ -150,36 +174,43 @@ jobs:
     runs-on: macos-14
     env:
       MODEL_ID: Qwen/Qwen2.5-0.5B-Instruct
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Download baseline
         uses: actions/download-artifact@v4
         with:
           name: baseline-reference
           path: artifacts/baseline
+
       - name: Download student artifact bundle
         uses: actions/download-artifact@v4
         with:
           name: student-artifact
           path: artifacts/student
+
       - name: Download eval metrics
         uses: actions/download-artifact@v4
         with:
           path: artifacts/eval
           pattern: eval-shard-*
           merge-multiple: true
+
       - name: Aggregate metrics
         run: |
           mkdir -p outputs/metrics
+
           ARTIFACT_BYTES=$(python - <<'PY'
-import os
-s=0
-for root, _, files in os.walk('artifacts'):
-    for f in files:
-        s += os.path.getsize(os.path.join(root, f))
-print(s)
-PY
-)
+          import os
+          s = 0
+          for root, _, files in os.walk('artifacts'):
+              for f in files:
+                  s += os.path.getsize(os.path.join(root, f))
+          print(s)
+          PY
+          )
+
           python scripts/aggregate_metrics.py \
             --single artifacts/baseline/outputs/metrics/phase1_single_baseline_metrics.json \
             --teacher-metrics-glob 'artifacts/student/downloaded_merge/downloaded_teacher/outputs/metrics/teacher_metrics_*.json' \
@@ -193,6 +224,7 @@ PY
             --setup-time-sec 0.0 \
             --failure-count 0 \
             --retry-count 0
+
       - uses: actions/upload-artifact@v4
         with:
           name: phase2-aggregate-metrics
