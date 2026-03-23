@@ -1,0 +1,10 @@
+{"id":"p1","prompt":"Explain distillation in one sentence."}
+{"id":"p2","prompt":"Give two benefits of sharding machine learning workflows."}
+{"id":"p3","prompt":"What is orchestration overhead in distributed systems?"}
+{"id":"p4","prompt":"Write a short checklist for reproducible benchmarks."}
+{"id":"p5","prompt":"Why should benchmark metrics be machine-readable?"}
+{"id":"p6","prompt":"Describe straggler effects in parallel processing."}
+{"id":"p7","prompt":"What does communication overhead mean in simple terms?"}
+{"id":"p8","prompt":"Give one caution when interpreting speedup numbers."}
+{"id":"p9","prompt":"Define parallel efficiency briefly."}
+{"id":"p10","prompt":"How can timestamped logs improve auditability?"}

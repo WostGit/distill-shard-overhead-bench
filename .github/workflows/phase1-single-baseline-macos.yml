@@ -1,0 +1,39 @@
+name: phase1-single-baseline-macos
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/phase1-single-baseline-macos.yml'
+      - 'scripts/**'
+      - 'data/**'
+      - 'requirements.txt'
+
+jobs:
+  single-baseline:
+    runs-on: macos-14
+    env:
+      MODEL_ID: Qwen/Qwen2.5-0.5B-Instruct
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run single baseline
+        run: |
+          python scripts/run_single_baseline.py \
+            --metrics outputs/metrics/phase1_single_baseline_metrics.json
+      - name: Upload baseline metrics artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-single-baseline-metrics
+          path: |
+            outputs/metrics/phase1_single_baseline_metrics.json
+            outputs/teacher_outputs.jsonl
+            outputs/student_artifact.json
+            outputs/eval_outputs.jsonl

@@ -1,0 +1,5 @@
+{"id":"e1","prompt":"Define speedup in one line.","reference":"Speedup is baseline wall time divided by sharded wall time."}
+{"id":"e2","prompt":"Define parallel efficiency in one line.","reference":"Parallel efficiency is speedup divided by the number of parallel workers."}
+{"id":"e3","prompt":"Name one source of communication overhead.","reference":"Data transfer between workers is one source of communication overhead."}
+{"id":"e4","prompt":"What is a straggler?","reference":"A straggler is a slower worker that delays overall completion."}
+{"id":"e5","prompt":"Why log artifact sizes?","reference":"Artifact sizes help quantify transfer and storage overhead."}
